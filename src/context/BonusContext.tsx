@@ -41,6 +41,11 @@ interface BonusContextType {
   setFilters: (filters: Filters) => void;
   toggleSavedBonus: (bonusId: string) => void;
   getSavedBonuses: () => Bonus[];
+  // Comparison feature additions
+  selectedForComparison: Bonus[];
+  addToComparison: (bonus: Bonus) => void;
+  removeFromComparison: (bonusId: string) => void;
+  clearComparison: () => void;
 }
 
 const BonusContext = createContext<BonusContextType | undefined>(undefined);
@@ -211,6 +216,9 @@ export const BonusProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     sortBy: 'popularity'
   });
 
+  // Comparison feature state
+  const [selectedForComparison, setSelectedForComparison] = useState<Bonus[]>([]);
+
   const toggleSavedBonus = (bonusId: string) => {
     setSavedBonuses(prev => 
       prev.includes(bonusId) 
@@ -223,15 +231,35 @@ export const BonusProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     return mockBonuses.filter(bonus => savedBonuses.includes(bonus.id));
   };
 
+  const addToComparison = (bonus: Bonus) => {
+    setSelectedForComparison(prev => {
+      if (prev.find(b => b.id === bonus.id) || prev.length >= 2) return prev;
+      return [...prev, bonus];
+    });
+  };
+
+  const removeFromComparison = (bonusId: string) => {
+    setSelectedForComparison(prev => prev.filter(b => b.id !== bonusId));
+  };
+
+  const clearComparison = () => setSelectedForComparison([]);
+
   return (
-    <BonusContext.Provider value={{
-      bonuses: mockBonuses,
-      savedBonuses,
-      filters,
-      setFilters,
-      toggleSavedBonus,
-      getSavedBonuses
-    }}>
+    <BonusContext.Provider
+      value={{
+        bonuses: mockBonuses,
+        savedBonuses,
+        filters,
+        setFilters,
+        toggleSavedBonus,
+        getSavedBonuses,
+        // Comparison feature
+        selectedForComparison,
+        addToComparison,
+        removeFromComparison,
+        clearComparison,
+      }}
+    >
       {children}
     </BonusContext.Provider>
   );
