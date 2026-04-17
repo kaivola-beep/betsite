@@ -41,17 +41,30 @@ class TravsportClient:
     timeout_s: float = 20.0
     cache_dir: Optional[Path] = None
     cache_ttl_s: float = 600.0
+    # Auth pass-throughs. The site returns 401 without a session cookie.
+    cookie: Optional[str] = None
+    auth_header: Optional[str] = None
+    referer: Optional[str] = None
+    extra_headers: dict[str, str] = field(default_factory=dict)
 
     _session: requests.Session = field(init=False, default_factory=requests.Session)
     _last_request_at: float = field(init=False, default=0.0)
     _lock: threading.Lock = field(init=False, default_factory=threading.Lock)
 
     def __post_init__(self):
-        self._session.headers.update({
+        headers = {
             "Accept": "application/json, text/plain, */*",
             "Accept-Language": "sv,en;q=0.7",
             "User-Agent": self.user_agent,
-        })
+        }
+        if self.cookie:
+            headers["Cookie"] = self.cookie
+        if self.auth_header:
+            headers["Authorization"] = self.auth_header
+        if self.referer:
+            headers["Referer"] = self.referer
+        headers.update(self.extra_headers or {})
+        self._session.headers.update(headers)
         if self.cache_dir is not None:
             Path(self.cache_dir).mkdir(parents=True, exist_ok=True)
 
@@ -123,5 +136,11 @@ def from_env() -> TravsportClient:
     cache = Path(os.getenv("TRAVSPORT_CACHE_DIR",
                             str(Path.home() / ".cache" / "travsport")))
     interval = float(os.getenv("TRAVSPORT_MIN_INTERVAL", "1.0"))
-    return TravsportClient(base_url=base, user_agent=ua, cache_dir=cache,
-                            min_request_interval_s=interval)
+    return TravsportClient(
+        base_url=base, user_agent=ua, cache_dir=cache,
+        min_request_interval_s=interval,
+        cookie=os.getenv("TRAVSPORT_COOKIE"),
+        auth_header=os.getenv("TRAVSPORT_AUTH_HEADER"),
+        referer=os.getenv("TRAVSPORT_REFERER",
+                           "https://www.swedishhorseracing.com/races"),
+    )
