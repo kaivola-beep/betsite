@@ -8,27 +8,32 @@ from __future__ import annotations
 
 import io
 import json
+import sys
 from pathlib import Path
+
+# Streamlit runs this file as a script, not as a package member, so relative
+# imports would fail. Add the repo root to sys.path and use absolute imports.
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 import numpy as np
 import pandas as pd
 import streamlit as st
 
-from ..data.loaders import (
+from toto_optimizer.data.loaders import (
     generate_demo_card,
     load_pool_shares_from_csv,
     load_race_card_from_csv,
     load_race_card_from_json,
     race_card_to_dataframe,
 )
-from ..data.schemas import RaceCard
-from ..features.engineering import build_features
-from ..models.ensemble import LogLinearEnsemble
-from ..models.predict import PlackettLuceModel, ensure_prob_normalised
-from ..optimizer.objective_functions import ObjectiveContext
-from ..optimizer.tickets import GenerationConfig, generate_tickets
-from ..pool.market_model import MarketModel
-from ..simulation.monte_carlo import SimulationConfig, simulate
+from toto_optimizer.data.schemas import RaceCard
+from toto_optimizer.features.engineering import build_features
+from toto_optimizer.models.ensemble import LogLinearEnsemble
+from toto_optimizer.models.predict import PlackettLuceModel, ensure_prob_normalised
+from toto_optimizer.optimizer.objective_functions import ObjectiveContext
+from toto_optimizer.optimizer.tickets import GenerationConfig, generate_tickets
+from toto_optimizer.pool.market_model import MarketModel
+from toto_optimizer.simulation.monte_carlo import SimulationConfig, simulate
 
 
 st.set_page_config(page_title="Toto Optimizer", layout="wide")

@@ -6,21 +6,26 @@ Launch with::
 """
 from __future__ import annotations
 
+import sys
 from pathlib import Path
+
+# Streamlit runs this file as a script, not as a package member, so relative
+# imports would fail. Add the repo root to sys.path and use absolute imports.
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 import numpy as np
 import pandas as pd
 import streamlit as st
 
-from ..calibration.metrics import reliability_curve, summary_report
-from ..data.loaders import generate_history, load_starts_from_csv
-from ..evaluation.backtest import walk_forward
-from ..evaluation.diagnostics import bucketed_report
-from ..features import build_features
-from ..market.compare import edge_table, fair_odds_table
-from ..models.baseline import PlackettLuceBaseline
-from ..models.stack import build_stack, build_stack_with_market
-from ..models.uncertainty import BootstrapUncertainty
+from race_model.calibration.metrics import reliability_curve, summary_report
+from race_model.data.loaders import generate_history, load_starts_from_csv
+from race_model.evaluation.backtest import walk_forward
+from race_model.evaluation.diagnostics import bucketed_report
+from race_model.features import build_features
+from race_model.market.compare import edge_table, fair_odds_table
+from race_model.models.baseline import PlackettLuceBaseline
+from race_model.models.stack import build_stack, build_stack_with_market
+from race_model.models.uncertainty import BootstrapUncertainty
 
 
 st.set_page_config(page_title="Race Model", layout="wide")
@@ -62,7 +67,7 @@ with st.sidebar:
 
 @st.cache_data(show_spinner=False)
 def _train_cached(history_df: pd.DataFrame, use_market: bool, calib: str):
-    from ..models.stack import build_stack, build_stack_with_market
+    from race_model.models.stack import build_stack, build_stack_with_market
     stack = (build_stack_with_market(history_df, calibration=calib)
              if use_market else build_stack(history_df, calibration=calib))
     return stack
