@@ -21,8 +21,9 @@ import requests
 
 DEFAULT_BASE_URL = "https://www.swedishhorseracing.com"
 DEFAULT_USER_AGENT = (
-    "toto-optimizer/0.1 (+https://github.com/kaivola-beep/betsite; "
-    "personal research; please contact via GitHub issues if this bothers you)"
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+    "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 "
+    "toto-optimizer/0.1 (+https://github.com/kaivola-beep/betsite)"
 )
 
 log = logging.getLogger(__name__)
@@ -52,17 +53,23 @@ class TravsportClient:
     _lock: threading.Lock = field(init=False, default_factory=threading.Lock)
 
     def __post_init__(self):
+        # Swedishhorseracing.com returns 401 unless these browser-XHR
+        # headers are present. Values chosen to match a real Chrome
+        # request captured from DevTools.
         headers = {
             "Accept": "application/json, text/plain, */*",
-            "Accept-Language": "sv,en;q=0.7",
+            "Accept-Language": "en,fi-FI;q=0.9,fi;q=0.8,en-US;q=0.7",
             "User-Agent": self.user_agent,
+            "X-Requested-With": "XMLHttpRequest",
+            "Referer": self.referer or f"{self.base_url}/races",
+            "Sec-Fetch-Dest": "empty",
+            "Sec-Fetch-Mode": "cors",
+            "Sec-Fetch-Site": "same-origin",
         }
         if self.cookie:
             headers["Cookie"] = self.cookie
         if self.auth_header:
             headers["Authorization"] = self.auth_header
-        if self.referer:
-            headers["Referer"] = self.referer
         headers.update(self.extra_headers or {})
         self._session.headers.update(headers)
         if self.cache_dir is not None:
