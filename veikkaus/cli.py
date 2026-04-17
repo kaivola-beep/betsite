@@ -33,8 +33,10 @@ app = typer.Typer(add_completion=False,
 console = Console()
 
 
-DATE_KEYS = ("date", "cardDate", "startDate", "firstRaceStart",
-             "firstRacePostTime", "beginTime", "startTime")
+DATE_KEYS = ("meetDate", "date", "cardDate", "startDate")
+TIME_KEYS = ("firstRaceStart", "firstRacePostTime", "startTime",
+             "beginTime", "postTime")
+POOLS_KEYS = ("totoPools", "pools", "poolTypes")
 RACE_CONTAINER_KEYS = ("races", "raceIds", "raceIdList",
                         "raceList", "raceCount", "numRaces")
 
@@ -47,24 +49,35 @@ def _first(d: dict, *keys, default=""):
     return default
 
 
-def _count_races(c: dict) -> int:
-    for k in RACE_CONTAINER_KEYS:
-        v = c.get(k)
-        if v is None:
-            continue
-        if isinstance(v, list):
-            return len(v)
-        if isinstance(v, (int, float)):
-            return int(v)
-        # string — sometimes a comma-joined list
-        if isinstance(v, str):
-            return len([x for x in v.split(",") if x.strip()])
-    return 0
+def _first_race_time(c: dict) -> str:
+    """Return a HH:MM string for the first race, if the card has an
+    epoch-millisecond timestamp. Otherwise an empty string."""
+    v = _first(c, *TIME_KEYS, default=None)
+    if v is None:
+        return ""
+    try:
+        from datetime import datetime, timezone
+        ts = int(v)
+        if ts > 1e12:   # ms
+            ts //= 1000
+        return datetime.fromtimestamp(ts, tz=timezone.utc).astimezone().strftime("%H:%M")
+    except (TypeError, ValueError):
+        return str(v)[:16]
+
+
+def _pools_label(c: dict) -> str:
+    pools = _first(c, *POOLS_KEYS, default=[])
+    if isinstance(pools, list):
+        return ", ".join(str(p) for p in pools)
+    return str(pools)
 
 
 @app.command()
 def today(raw: bool = typer.Option(False, help="Print one raw card as JSON so "
-                                                  "you can inspect field names.")):
+                                                  "you can inspect field names."),
+          pools: bool = typer.Option(False, "--pools",
+                                       help="Show Toto products instead of "
+                                            "race count.")):
     """List today's racing cards."""
     info = TotoInfo(client=from_env())
     cards = info.cards_today()
@@ -75,18 +88,19 @@ def today(raw: bool = typer.Option(False, help="Print one raw card as JSON so "
         return
 
     t = Table(title=f"Cards today ({len(cards)})")
-    for c in ("id", "venue", "date", "races"):
+    for c in ("id", "venue", "date", "first_race", "products"):
         t.add_column(c)
     for c in cards:
         t.add_row(
-            str(_first(c, "id", "cardId", "card_id")),
+            str(_first(c, "cardId", "id", "card_id")),
             str(_first(c, "trackName", "track", "venue", "place")),
-            str(_first(c, *DATE_KEYS))[:16],
-            str(_count_races(c)),
+            str(_first(c, *DATE_KEYS))[:10],
+            _first_race_time(c),
+            _pools_label(c),
         )
     console.print(t)
     if cards and not any(_first(c, *DATE_KEYS) for c in cards):
-        console.print("[yellow]Date column is empty — field name may have "
+        console.print("[yellow]Date column is empty - field name may have "
                       "changed. Run with --raw to inspect the JSON.[/yellow]")
 
 

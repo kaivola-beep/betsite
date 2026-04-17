@@ -51,7 +51,7 @@ def _race_id(race: dict) -> str:
 
 
 def _card_id(card: dict) -> str:
-    return str(_first_key(card, "id", "cardId", "card_id"))
+    return str(_first_key(card, "cardId", "id", "card_id"))
 
 
 def _program_number(runner: dict) -> int:
@@ -307,7 +307,7 @@ def _find_card_meta(info: TotoInfo, card_id: str | int) -> dict:
             if str(_card_id(c)) == str(card_id):
                 return {
                     "venue": _first_key(c, "trackName", "track", "venue"),
-                    "card_date": _first_key(c, "date", "cardDate"),
+                    "card_date": _first_key(c, "meetDate", "date", "cardDate"),
                 }
     except Exception as e:
         log.warning("cards_today() failed: %s", e)
