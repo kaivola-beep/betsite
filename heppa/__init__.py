@@ -7,5 +7,6 @@ User-Agent.
 """
 __version__ = "0.1.0"
 
+from .api import HippoApi                   # noqa: F401
 from .client import HeppaClient, HeppaError  # noqa: F401
-from .statistics import HeppaStatistics      # noqa: F401
+from .statistics import HeppaStatistics      # noqa: F401 (deprecated, HTML-based)

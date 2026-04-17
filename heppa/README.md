@@ -39,6 +39,33 @@ pip install -r heppa/requirements.txt
 
 `lxml` on pakollinen `pandas.read_html`:ää varten.
 
+## Käytetty endpoint
+
+Paketti käyttää oletuksena **confirmed JSON-endpointtia**:
+
+```
+GET https://heppa.hippos.fi/heppa2_backend/statistics/best/horses
+    ?species=L&startDate=2023-01-01&endDate=2023-12-31&limit=10&onlyRegisteredInFinland=true
+```
+
+Query-parametrit:
+- `species`: `L` (lämminverinen) / `S` (suomenhevonen) / `P` (poni)
+- `startDate`, `endDate`: `YYYY-MM-DD`
+- `limit`: tulosten maksimimäärä
+- `onlyRegisteredInFinland`: `true` / `false`
+
+Vastauksen rakenne (per hevonen): `horseId`, `name`, `species`,
+`gender` (R/O/T), `birthYear`, `birthCountry`, `registrationCountry`,
+`starts`, `prizeSum`, `firstPlaces`, `secondPlaces`, `thirdPlaces`,
+`monte`, `photo`. Paketti normalisoi nämä siistiin DataFrameen.
+
+Ohjastaja- ja valmentajaendpointit ovat arvauksena
+`/heppa2_backend/statistics/best/drivers` ja
+`/heppa2_backend/statistics/best/trainers`. Jos ne palauttavat 404:n,
+voit ohittaa polut ympäristömuuttujilla `HIPPO_DRIVERS_PATH` ja
+`HIPPO_TRAINERS_PATH` tai syöttää `path=...`-parametrilla suoraan
+metodille.
+
 ## Käyttö
 
 ### CLI
