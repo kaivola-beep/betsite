@@ -100,26 +100,61 @@ def today():
 
 
 @app.command("inspect-card")
-def inspect_card(card_id: str = typer.Option(...)):
+def inspect_card(card_id: str = typer.Option(...),
+                  raw: bool = typer.Option(False, "--raw",
+                                             help="Dump pools + one runner "
+                                                  "JSON so you can see all "
+                                                  "available fields.")):
     """Fetch the card and report how many horses have resolvable hippo IDs."""
+    import json
     vc, hc = _build_clients()
     info = TotoInfo(vc)
+
+    if raw:
+        pools = info.card_pools(card_id)
+        console.print("[bold cyan]Pools:[/bold cyan]")
+        console.print_json(json.dumps(pools, ensure_ascii=False, default=str))
+        from veikkaus.adapters import _races_from_pools
+        race_ids = _races_from_pools(pools)
+        if race_ids:
+            runners = info.race_runners(race_ids[0])
+            console.print(
+                f"\n[bold cyan]First runner in race {race_ids[0]}:[/bold cyan]"
+            )
+            if runners:
+                console.print_json(json.dumps(runners[0], ensure_ascii=False,
+                                                 default=str))
+        return
+
     starts = fetch_card_starts(info, card_id)
     resolved = resolve_hippo_ids(starts)
     n_total = len(resolved)
     n_resolved = int(resolved["hippo_horse_id"].notna().sum())
-    console.print(f"[bold]Card {card_id}[/bold]: {n_total} runners, "
-                  f"{n_resolved} with inline hippo horseId.")
+    n_market = (int(resolved["market_share"].notna().sum())
+                 if "market_share" in resolved.columns else 0)
+    console.print(
+        f"[bold]Card {card_id}[/bold]: {n_total} runners, "
+        f"{n_resolved} with inline hippo horseId, "
+        f"{n_market} with market_share."
+    )
     _display_table(resolved, title="Runners",
-                    columns=["race_id", "program_number", "horse_name",
-                             "driver_id", "market_share", "hippo_horse_id"])
+                    columns=["race_number", "program_number", "horse_name",
+                             "driver_name", "trainer_name",
+                             "market_share", "hippo_horse_id"])
     if n_resolved < n_total:
         console.print(
-            "[yellow]Missing hippo_horse_id for some runners. Options:\n"
-            "  1) Build a CSV mapping ('horse_name,hippo_horse_id') and pass "
-            "it via --horse-map.\n"
-            "  2) Enable --name-search (best-effort; endpoint path not yet "
-            "confirmed).\n[/yellow]")
+            "[yellow]Missing hippo_horse_id for some runners. Run again "
+            "with --raw to see all fields in the runner JSON - maybe there "
+            "is a field we haven't mapped yet. Otherwise build a manual "
+            "CSV (horse_name,hippo_horse_id) and pass via --horse-map.[/yellow]"
+        )
+    if n_market == 0:
+        console.print(
+            "[yellow]No market_share on any runner. Likely the card has no "
+            "Voittaja (win) pool (only combination pools like T64/T65/T75). "
+            "You can still run 'predict' - the scorer will fall back to "
+            "structural features without a market prior.[/yellow]"
+        )
 
 
 @app.command()

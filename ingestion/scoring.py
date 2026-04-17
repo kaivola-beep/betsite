@@ -172,7 +172,12 @@ def _market_logit(s: Optional[pd.Series]) -> pd.Series:
     if s is None:
         return pd.Series(np.zeros(0))
     p = pd.to_numeric(s, errors="coerce")
-    p = p.fillna(p.median() or 0.01).clip(lower=1e-4, upper=1 - 1e-4)
+    median = p.median()
+    if pd.isna(median):
+        # No market data at all -> substitute a neutral constant so the
+        # z-score ends up as zero for every row (no market signal used).
+        median = 0.01
+    p = p.fillna(median).clip(lower=1e-4, upper=1 - 1e-4)
     return np.log(p / (1 - p))
 
 
