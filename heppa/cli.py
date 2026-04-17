@@ -8,6 +8,7 @@ from rich.console import Console
 from rich.table import Table
 
 from .client import from_env
+from .discover import inspect_page
 from .statistics import HeppaStatistics
 
 app = typer.Typer(add_completion=False,
@@ -67,6 +68,30 @@ def trainers(discipline: str = "warmblood",
              out: Path | None = None,
              limit: int = 50):
     _run("trainers", discipline, start_date, end_date, exclude_monte, out, limit)
+
+
+@app.command()
+def inspect(path: str = typer.Option(
+                "/mobiili/statistics/horses/top/warmblood",
+                "--path",
+                help="Path on heppa.hippos.fi to inspect."),
+            start_date: str = typer.Option(None, "--start"),
+            end_date: str = typer.Option(None, "--end"),
+            exclude_monte: bool = True):
+    """Diagnose the page: count tables and list URLs referenced.
+
+    Use this when the statistics commands fail with 'No tables found' —
+    the page is likely a JavaScript SPA and the real data lives at an
+    XHR endpoint that this command tries to surface.
+    """
+    params = {}
+    if start_date:
+        params["startDate"] = start_date
+    if end_date:
+        params["endDate"] = end_date
+    if exclude_monte:
+        params["monte"] = "x"
+    inspect_page(from_env(), path, params=params)
 
 
 if __name__ == "__main__":

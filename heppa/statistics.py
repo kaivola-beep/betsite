@@ -131,11 +131,24 @@ def parse_table_html(html: str, *, subject_key: str = "name") -> pd.DataFrame:
     """Parse the first plausible statistics table out of the HTML."""
     try:
         tables = pd.read_html(io.StringIO(html), thousands=" ", decimal=",")
-    except (ValueError, ImportError) as e:
+    except ImportError as e:
         raise HeppaError(f"pandas.read_html failed (is lxml installed?): {e}") from e
+    except ValueError as e:
+        # "No tables found" typically means the page is a JS SPA and the
+        # data is loaded via an XHR the requests library can't see.
+        raise HeppaError(
+            "No HTML tables found in the response. heppa.hippos.fi appears "
+            "to be a JavaScript SPA; the real data is loaded client-side. "
+            "Run 'python -m heppa.cli inspect' to find the XHR JSON "
+            "endpoint, then call heppa.discover.fetch_json(client, url) "
+            "directly. See heppa/README.md for details."
+        ) from e
 
     if not tables:
-        raise HeppaError("No HTML tables found in response.")
+        raise HeppaError(
+            "pandas.read_html returned zero tables — the page is a JS "
+            "SPA. Run 'python -m heppa.cli inspect'."
+        )
 
     # Pick the first table that has more than a handful of rows and looks
     # like a statistics listing (has a column that matches a known header).

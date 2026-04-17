@@ -119,6 +119,67 @@ pytest heppa/tests -q
 Testit käyttävät mukana toimitettuja `fixtures/*.html`-tiedostoja eivätkä
 tee oikeita verkkokutsuja.
 
+## Troubleshooting — "No tables found" / SPA
+
+Jos saat virheen:
+```
+HeppaError: No HTML tables found in the response.
+```
+se tarkoittaa lähes aina, että heppa.hippos.fi on **JavaScript-SPA** ja
+palauttaa aluksi tyhjän HTML-rungon — todellinen data haetaan
+selaimessa XHR-pyynnöllä JSON:ina. `requests.get()` ei osaa ajaa
+JavaScriptiä, joten näet vain sen tyhjän rungon.
+
+### Vaihe 1: Paikanna oikea JSON-endpoint
+
+Aja:
+```powershell
+python -m heppa.cli inspect `
+    --path "/mobiili/statistics/horses/top/warmblood" `
+    --start 2023-01-01 --end 2023-12-31
+```
+Komento tulostaa listan URL:ista, jotka sivu referoi — useimmiten
+oikea endpoint on muotoa
+`/heppa-api/...`, `/rest/...`, tai jotakin vastaavaa.
+
+Jos diagnostiikka ei löydä kandidaatteja, avaa itse selaimen Dev Tools:
+1. Avaa [heppa.hippos.fi/mobiili/statistics/horses/top/warmblood](https://heppa.hippos.fi/mobiili/statistics/horses/top/warmblood).
+2. Paina `F12` → välilehti **Network** → suodatin **XHR / Fetch**.
+3. Lataa sivu uudelleen (`F5`).
+4. Etsi pyyntö, jonka response on JSON ja sisältää hevoslistan.
+5. Kopioi sen URL.
+
+### Vaihe 2: Kutsu sitä suoraan
+
+```python
+from heppa.client import from_env
+from heppa.discover import fetch_json
+
+client = from_env()
+data = fetch_json(client,
+                  "/heppa-api/statistics/horses/top",   # ← oikea URL
+                  params={"discipline": "warmblood",
+                          "startDate": "2023-01-01",
+                          "endDate": "2023-12-31",
+                          "monte": "x"})
+print(data[:3])
+```
+Kun tiedät oikean URL:n ja JSON-rakenteen, päivitä
+`heppa/statistics.py` hakemaan JSON:ia HTML:n sijaan. Siinä vaiheessa
+parseri muuttuu täysin triviaaliksi.
+
+### Vaihtoehto: headless-selain
+
+Jos datan hakeminen vaatii JavaScriptin ajamisen (harvinaista, useimmat
+SPA:t hakevat datan yksinkertaisella fetchillä jonka voi toistaa),
+käytä Playwrightiä:
+```powershell
+pip install playwright
+playwright install chromium
+```
+Älä käytä tätä polkua oletuksena — se on paljon hitaampaa ja rasittaa
+Hippoksen palveluita enemmän.
+
 ## Tunnetut rajoitteet
 
 * **HTML-pohjainen.** Jos Hippos uudelleenjärjestää sivun, parseri hajoaa.

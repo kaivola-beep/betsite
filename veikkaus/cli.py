@@ -33,23 +33,61 @@ app = typer.Typer(add_completion=False,
 console = Console()
 
 
+DATE_KEYS = ("date", "cardDate", "startDate", "firstRaceStart",
+             "firstRacePostTime", "beginTime", "startTime")
+RACE_CONTAINER_KEYS = ("races", "raceIds", "raceIdList",
+                        "raceList", "raceCount", "numRaces")
+
+
+def _first(d: dict, *keys, default=""):
+    for k in keys:
+        v = d.get(k)
+        if v is not None and v != "":
+            return v
+    return default
+
+
+def _count_races(c: dict) -> int:
+    for k in RACE_CONTAINER_KEYS:
+        v = c.get(k)
+        if v is None:
+            continue
+        if isinstance(v, list):
+            return len(v)
+        if isinstance(v, (int, float)):
+            return int(v)
+        # string — sometimes a comma-joined list
+        if isinstance(v, str):
+            return len([x for x in v.split(",") if x.strip()])
+    return 0
+
+
 @app.command()
-def today():
+def today(raw: bool = typer.Option(False, help="Print one raw card as JSON so "
+                                                  "you can inspect field names.")):
     """List today's racing cards."""
     info = TotoInfo(client=from_env())
     cards = info.cards_today()
-    t = Table(title="Cards today")
-    cols = ("id", "venue", "date", "races")
-    for c in cols:
+
+    if raw and cards:
+        import json
+        console.print_json(json.dumps(cards[0], ensure_ascii=False, default=str))
+        return
+
+    t = Table(title=f"Cards today ({len(cards)})")
+    for c in ("id", "venue", "date", "races"):
         t.add_column(c)
     for c in cards:
         t.add_row(
-            str(c.get("id") or c.get("cardId") or ""),
-            str(c.get("trackName") or c.get("track") or c.get("venue") or ""),
-            str(c.get("date") or c.get("cardDate") or ""),
-            str(c.get("raceCount") or len(c.get("races") or [])),
+            str(_first(c, "id", "cardId", "card_id")),
+            str(_first(c, "trackName", "track", "venue", "place")),
+            str(_first(c, *DATE_KEYS))[:16],
+            str(_count_races(c)),
         )
     console.print(t)
+    if cards and not any(_first(c, *DATE_KEYS) for c in cards):
+        console.print("[yellow]Date column is empty — field name may have "
+                      "changed. Run with --raw to inspect the JSON.[/yellow]")
 
 
 @app.command()
