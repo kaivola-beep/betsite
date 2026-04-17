@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pandas as pd
 import typer
 from rich.console import Console
 from rich.table import Table
@@ -158,6 +159,70 @@ def trainers(start_date: str = typer.Option(..., "--start"),
                  track=track, limit=limit, order=order,
                  horse_starts=horse_starts, pony_starts=pony_starts,
                  out=out, raw=raw, path=path)
+
+
+@app.command("horse-stats")
+def horse_stats_cmd(horse_id: str = typer.Argument(..., help="Hippos horseId."),
+                     raw: bool = typer.Option(False, "--raw")):
+    """Career / per-year aggregate stats for a single horse."""
+    import json
+    api = HippoApi(client=from_env())
+    if raw:
+        from .discover import fetch_json
+        from .api import HORSE_STATS_TEMPLATE
+        data = fetch_json(api.client, HORSE_STATS_TEMPLATE.format(horse_id=horse_id))
+        console.print_json(json.dumps(data, ensure_ascii=False, default=str))
+        return
+    stats = api.horse_stats(horse_id)
+    # Career total
+    tot = Table(title=f"Horse {horse_id} — career total")
+    for k, v in stats.total.items():
+        tot.add_row(str(k), "" if v is None else str(v))
+    tot.add_column("field"); tot.add_column("value")
+    console.print(tot)
+    # Per-year
+    if not stats.yearly.empty:
+        y = Table(title="Per-year stats")
+        for c in stats.yearly.columns:
+            y.add_column(str(c))
+        for _, row in stats.yearly.iterrows():
+            y.add_row(*["" if v is None else str(v) for v in row])
+        console.print(y)
+
+
+@app.command("horse-starts")
+def horse_starts_cmd(horse_id: str = typer.Argument(...),
+                      page: int = 1,
+                      page_size: int = typer.Option(20, "--limit"),
+                      only_results: bool = typer.Option(True, "--only-results/--include-upcoming"),
+                      out: Path | None = None,
+                      raw: bool = typer.Option(False, "--raw")):
+    """Race-by-race history for a single horse."""
+    import json
+    api = HippoApi(client=from_env())
+    if raw:
+        from .discover import fetch_json
+        from .api import HORSE_STARTS_TEMPLATE
+        data = fetch_json(api.client, HORSE_STARTS_TEMPLATE.format(horse_id=horse_id),
+                           params={"pageNumber": str(page), "pageSize": str(page_size),
+                                    "onlyResults": "true" if only_results else "false"})
+        console.print_json(json.dumps(data, ensure_ascii=False, default=str))
+        return
+    df = api.horse_starts(horse_id, page=page, page_size=page_size,
+                           only_results=only_results)
+    show_cols = ["date", "track_code", "distance_m", "distance_code",
+                 "placing", "km_time_s", "earnings_eur", "win_odds",
+                 "driver_name", "gallop", "start_form"]
+    show_cols = [c for c in show_cols if c in df.columns]
+    t = Table(title=f"Horse {horse_id} — last {len(df)} starts")
+    for c in show_cols:
+        t.add_column(c)
+    for _, row in df.iterrows():
+        t.add_row(*[("" if pd.isna(v) else str(v)) for v in row[show_cols]])
+    console.print(t)
+    if out:
+        df.to_csv(out, index=False)
+        console.print(f"[green]Wrote {len(df)} rows to {out}[/green]")
 
 
 @app.command()
