@@ -7,8 +7,10 @@ from unittest.mock import MagicMock
 import pandas as pd
 
 from veikkaus.adapters import (
+    _extract_race_id,
     _extract_win_shares,
     _parse_pool_share,
+    _race_number_map,
     _races_from_pools,
     to_race_model_starts,
     to_toto_optimizer_card,
@@ -81,6 +83,42 @@ def test_parse_pool_share_accepts_percent_and_fraction():
 def test_races_from_pools_collects_unique_ordered():
     ids = _races_from_pools(POOLS)
     assert ids == ["R1", "R2"]
+
+
+def test_races_from_pools_handles_dict_raceids():
+    """Veikkaus sometimes returns raceIds as dicts with raceId + raceNumber."""
+    pools = [
+        {"id": "P_WIN_1", "poolType": "WIN",
+         "raceIds": [{"raceId": 3474965681, "raceNumber": 1}]},
+        {"id": "P_T64", "poolType": "T64",
+         "raceIds": [
+             {"raceId": 3474965681, "raceNumber": 1},
+             {"raceId": 3474965682, "raceNumber": 2},
+             {"raceId": 3474965683, "raceNumber": 3},
+         ]},
+    ]
+    ids = _races_from_pools(pools)
+    assert ids == ["3474965681", "3474965682", "3474965683"]
+
+
+def test_extract_race_id_from_various_shapes():
+    assert _extract_race_id(12345) == "12345"
+    assert _extract_race_id("abc") == "abc"
+    assert _extract_race_id({"raceId": 999, "raceNumber": 1}) == "999"
+    assert _extract_race_id({"id": 42}) == "42"
+    assert _extract_race_id(None) == ""
+    assert _extract_race_id({"foo": "bar"}) == ""
+
+
+def test_race_number_map_from_dict_raceids():
+    pools = [
+        {"poolType": "T64",
+         "raceIds": [
+             {"raceId": 100, "raceNumber": 3},
+             {"raceId": 200, "raceNumber": 4},
+         ]},
+    ]
+    assert _race_number_map(pools) == {"100": 3, "200": 4}
 
 
 def test_extract_win_shares():

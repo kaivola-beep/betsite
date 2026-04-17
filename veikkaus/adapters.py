@@ -119,6 +119,7 @@ def to_race_model_starts(info: TotoInfo, card_id: str | int,
     """
     pools = info.card_pools(card_id)
     race_ids = _races_from_pools(pools)
+    race_numbers = _race_number_map(pools)
     card_meta = _find_card_meta(info, card_id)
 
     win_pool_by_race = _win_pool_by_race(pools) if include_market else {}
@@ -127,6 +128,7 @@ def to_race_model_starts(info: TotoInfo, card_id: str | int,
     for race_id in race_ids:
         runners = info.race_runners(race_id)
         race_meta = _extract_race_meta(runners, card_meta)
+        race_meta["race_number"] = race_numbers.get(race_id)
 
         shares_map: dict[int, dict[str, Optional[float]]] = {}
         if include_market:
@@ -143,6 +145,7 @@ def to_race_model_starts(info: TotoInfo, card_id: str | int,
             share_info = shares_map.get(pn, {})
             rows.append({
                 "race_id": str(race_id),
+                "race_number": race_meta.get("race_number"),
                 "race_date": race_meta["race_date"],
                 "track": race_meta["track"],
                 "distance_m": race_meta["distance_m"],
@@ -284,20 +287,52 @@ def _coerce_date(v) -> date:
 
 
 def _races_from_pools(pools: Iterable[dict]) -> list[str]:
-    """Return the ordered list of race ids appearing in the pool list."""
+    """Return the ordered list of race ids appearing in the pool list.
+
+    ``raceIds`` may contain either plain integers/strings or dicts like
+    ``{'raceId': 3474965681, 'raceNumber': 1}``. Both shapes are
+    accepted; the dict form's ``raceId`` value is extracted.
+    """
     seen: list[str] = []
     for p in pools:
         ids = _first_key(p, "raceIds", "races", default=[])
-        if isinstance(ids, list):
-            for rid in ids:
-                s = str(rid)
-                if s not in seen:
-                    seen.append(s)
-        elif ids is not None:
-            s = str(ids)
-            if s not in seen:
+        if not isinstance(ids, list):
+            ids = [ids] if ids is not None else []
+        for rid in ids:
+            s = _extract_race_id(rid)
+            if s and s not in seen:
                 seen.append(s)
     return seen
+
+
+def _extract_race_id(val) -> str:
+    if val is None:
+        return ""
+    if isinstance(val, (int, float)):
+        return str(int(val))
+    if isinstance(val, str):
+        return val
+    if isinstance(val, dict):
+        for key in ("raceId", "id", "race_id"):
+            if key in val and val[key] is not None:
+                return str(val[key])
+    return ""
+
+
+def _race_number_map(pools: Iterable[dict]) -> dict[str, int]:
+    """Return race_id -> raceNumber, if the pool response carries it."""
+    out: dict[str, int] = {}
+    for p in pools:
+        ids = _first_key(p, "raceIds", "races", default=[])
+        if not isinstance(ids, list):
+            ids = [ids] if ids is not None else []
+        for rid in ids:
+            if isinstance(rid, dict):
+                rid_s = _extract_race_id(rid)
+                num = rid.get("raceNumber") or rid.get("number")
+                if rid_s and num is not None:
+                    out[rid_s] = int(num)
+    return out
 
 
 def _find_card_meta(info: TotoInfo, card_id: str | int) -> dict:
@@ -335,12 +370,17 @@ def _win_pool_by_race(pools: Iterable[dict]) -> dict[str, str]:
     """Return a ``race_id -> win_pool_id`` mapping."""
     out: dict[str, str] = {}
     for p in pools:
-        if _pool_type(p) == "WIN":
-            ids = _first_key(p, "raceIds", "races", default=[])
-            if isinstance(ids, list) and ids:
-                out[str(ids[0])] = str(_first_key(p, "id", "poolId"))
-            elif ids:
-                out[str(ids)] = str(_first_key(p, "id", "poolId"))
+        if _pool_type(p) != "WIN":
+            continue
+        ids = _first_key(p, "raceIds", "races", default=[])
+        if not isinstance(ids, list):
+            ids = [ids] if ids is not None else []
+        if not ids:
+            continue
+        rid_s = _extract_race_id(ids[0])
+        pool_id = str(_first_key(p, "id", "poolId"))
+        if rid_s:
+            out[rid_s] = pool_id
     return out
 
 
