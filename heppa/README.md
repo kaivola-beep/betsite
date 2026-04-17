@@ -39,46 +39,75 @@ pip install -r heppa/requirements.txt
 
 `lxml` on pakollinen `pandas.read_html`:ää varten.
 
-## Käytetty endpoint
+## Käytetyt endpoint-polut
 
-Paketti käyttää oletuksena **confirmed JSON-endpointtia**:
+Hippos käyttää **kahta eri URL-muotoa**, ei yhtä yhtenäistä rajapintaa.
+
+### Hevoset (vahvistettu)
 
 ```
-GET https://heppa.hippos.fi/heppa2_backend/statistics/best/horses
-    ?species=L&startDate=2023-01-01&endDate=2023-12-31&limit=10&onlyRegisteredInFinland=true
+GET /heppa2_backend/statistics/best/horses
+    ?species=L&startDate=2023-01-01&endDate=2023-12-31
+    &limit=10&onlyRegisteredInFinland=true
 ```
 
-Query-parametrit:
-- `species`: `L` (lämminverinen) / `S` (suomenhevonen) / `P` (poni)
-- `startDate`, `endDate`: `YYYY-MM-DD`
-- `limit`: tulosten maksimimäärä
-- `onlyRegisteredInFinland`: `true` / `false`
+Query-parametrit: `species` (`L` lämminveri / `S` suomenhevonen /
+`P` poni), `startDate`, `endDate`, `limit`, `onlyRegisteredInFinland`.
 
-Vastauksen rakenne (per hevonen): `horseId`, `name`, `species`,
-`gender` (R/O/T), `birthYear`, `birthCountry`, `registrationCountry`,
-`starts`, `prizeSum`, `firstPlaces`, `secondPlaces`, `thirdPlaces`,
-`monte`, `photo`. Paketti normalisoi nämä siistiin DataFrameen.
+Vastauksen rakenne per hevonen: `horseId`, `name`, `species`, `gender`
+(R/O/T), `birthYear`, `birthCountry`, `registrationCountry`, `starts`,
+`prizeSum`, `firstPlaces`, `secondPlaces`, `thirdPlaces`, `monte`,
+`photo`.
 
-Ohjastaja- ja valmentajaendpointit ovat arvauksena
-`/heppa2_backend/statistics/best/drivers` ja
-`/heppa2_backend/statistics/best/trainers`. Jos ne palauttavat 404:n,
-voit ohittaa polut ympäristömuuttujilla `HIPPO_DRIVERS_PATH` ja
-`HIPPO_TRAINERS_PATH` tai syöttää `path=...`-parametrilla suoraan
-metodille.
+### Ohjastajat (vahvistettu)
+
+```
+GET /heppa2_backend/statistics/risingshape/driver/2026-01-01/2026-12-31
+    ?track=ALL&limit=30&order=WINS&horseStarts=true&ponyStarts=false
+```
+
+Täysin eri muotoa kuin horses: **päivämäärät ovat polkusegmenttejä**,
+ja query-parametrit koskevat lähtötyyppiä (horse/pony) eivätkä rotua.
+
+Vastauksen rakenne per ohjastaja: `start`, `wins`, `secondPlaces`,
+`thirdPlaces`, `priceMoneys`, `winPercentage`, `priceMoneyForStart`,
+`winOddsSumForStart`, `personName`, `firstName`, `lastName`,
+`personId`, `photo`.
+
+Paketti normalisoi nämä sarakkeisiin joissa on sekä raakaluvut että
+kaksi erityisen hyödyllistä kenttää featureiksi:
+- `earnings_per_start` — ohjastajan skaalattu laatuindeksi (€/startti).
+- `win_odds_per_start` — voittokerrointen summa / startti eli
+  indikaatio kuinka paljon ohjastajan voittajat maksavat (korkeampi =
+  ohjastaja voittaa enemmän pitkävetoja).
+
+### Valmentajat (arvaus, sama sapluuna)
+
+```
+GET /heppa2_backend/statistics/risingshape/trainer/{start}/{end}
+```
+
+Oletuksena kokeillaan `trainer`-polkua. Jos 404, etsi oikea polku
+DevTools-metodilla (ks. Troubleshooting-osio) ja ohita oletuspolku
+joko `--path`-lipulla tai ympäristömuuttujalla
+`HIPPO_TRAINER_TEMPLATE`.
 
 ## Käyttö
 
 ### CLI
 
 ```powershell
-# Top lämminveriset 2023
+# Top lämminveriset 2023 (species-parametri vain hevosilla)
 python -m heppa.cli horses --discipline warmblood --start 2023-01-01 --end 2023-12-31 --out .\top_horses_2023.csv
 
-# Top ohjastajat kylmäveri
-python -m heppa.cli drivers --discipline coldblood --start 2024-01-01 --end 2024-12-31 --out .\top_drivers_2024.csv
+# Top ohjastajat 2026 (ei discipline-parametria; käytä --horse-starts / --pony-starts)
+python -m heppa.cli drivers --start 2026-01-01 --end 2026-12-31 --limit 30 --order WINS --out .\top_drivers.csv
 
-# Top valmentajat
-python -m heppa.cli trainers --discipline warmblood --out .\top_trainers.csv
+# Top valmentajat (sama signature kuin drivers)
+python -m heppa.cli trainers --start 2026-01-01 --end 2026-12-31 --limit 30 --out .\top_trainers.csv
+
+# Tarkista yhden rivin JSON (debug)
+python -m heppa.cli drivers --start 2026-01-01 --end 2026-12-31 --raw
 ```
 
 ### Python

@@ -1,33 +1,37 @@
 """JSON API wrapper for heppa.hippos.fi.
 
 The mobile statistics UI at ``/mobiili/statistics/...`` is a SPA that
-calls the backend at ``/heppa2_backend/statistics/best/...`` and
-renders the JSON. This module calls that JSON endpoint directly, which
-is both faster and less fragile than HTML scraping.
+calls ``/heppa2_backend/statistics/...`` endpoints directly. Two
+different URL patterns are in use:
 
-Confirmed endpoint
+Horses (confirmed)
 ------------------
-``GET https://heppa.hippos.fi/heppa2_backend/statistics/best/horses``
+``GET /heppa2_backend/statistics/best/horses``
+``?species={L|S|P}&startDate=YYYY-MM-DD&endDate=YYYY-MM-DD&limit=N&onlyRegisteredInFinland=true``
 
-Query parameters observed in the SPA:
-
-* ``onlyRegisteredInFinland=true`` — only horses registered in Finland.
-* ``species=L`` (lämminverinen), ``S`` (suomenhevonen), ``P`` (pony).
-* ``limit=10`` (etc.)
-* ``startDate=YYYY-MM-DD``, ``endDate=YYYY-MM-DD``.
-
-Response shape
---------------
-An array of records with the following fields (all strings; numeric
-fields are coerced in :func:`_normalise_horses`):
-
+Response per horse:
 ``horseId, name, species, gender, birthCountry, registrationCountry,
 birthYear, year, starts, monte, prizeSum, firstPlaces, secondPlaces,
 thirdPlaces, photo {...}``
 
-Driver and trainer paths are best-guessed (``best/drivers``,
-``best/trainers``). If they 404, override via ``HIPPO_DRIVERS_PATH`` /
-``HIPPO_TRAINERS_PATH`` env vars or pass ``path=...`` to the method.
+Drivers (confirmed)
+-------------------
+``GET /heppa2_backend/statistics/risingshape/driver/{startDate}/{endDate}``
+``?track=ALL&limit=N&order={WINS|PRIZE_MONEY|...}&horseStarts=true&ponyStarts=false``
+
+Completely different URL shape from horses - dates are path segments
+and the query params are about race type rather than species.
+
+Response per person:
+``start, wins, secondPlaces, thirdPlaces, priceMoneys, winPercentage,
+priceMoneyForStart, winOddsSumForStart, personName, firstName,
+lastName, photo {...}, personId``
+
+Trainers (best-guess path, override with HIPPO_TRAINERS_PATH or --path)
+-----------------------------------------------------------------------
+``GET /heppa2_backend/statistics/risingshape/trainer/{startDate}/{endDate}``
+
+Identical query params and schema to drivers are assumed.
 """
 from __future__ import annotations
 
@@ -42,8 +46,9 @@ from .discover import fetch_json
 
 
 DEFAULT_HORSES_PATH = "/heppa2_backend/statistics/best/horses"
-DEFAULT_DRIVERS_PATH = "/heppa2_backend/statistics/best/drivers"
-DEFAULT_TRAINERS_PATH = "/heppa2_backend/statistics/best/trainers"
+# Drivers / trainers use a templated path with dates in the URL segments.
+DRIVER_PATH_TEMPLATE = "/heppa2_backend/statistics/risingshape/driver/{start}/{end}"
+TRAINER_PATH_TEMPLATE = "/heppa2_backend/statistics/risingshape/trainer/{start}/{end}"
 
 SPECIES_MAP = {
     "warmblood": "L",
@@ -68,9 +73,11 @@ class HippoApi:
 
     client: HeppaClient
     horses_path: str = DEFAULT_HORSES_PATH
-    drivers_path: str = os.getenv("HIPPO_DRIVERS_PATH", DEFAULT_DRIVERS_PATH)
-    trainers_path: str = os.getenv("HIPPO_TRAINERS_PATH", DEFAULT_TRAINERS_PATH)
+    driver_template: str = os.getenv("HIPPO_DRIVER_TEMPLATE", DRIVER_PATH_TEMPLATE)
+    trainer_template: str = os.getenv("HIPPO_TRAINER_TEMPLATE", TRAINER_PATH_TEMPLATE)
 
+    # ------------------------------------------------------------------
+    # Horses
     # ------------------------------------------------------------------
     def top_horses(self, discipline: Discipline = "warmblood",
                    start_date: Optional[str] = None,
@@ -78,45 +85,50 @@ class HippoApi:
                    limit: int = 50,
                    only_registered_in_finland: bool = True,
                    path: Optional[str] = None) -> pd.DataFrame:
-        params = _build_params(discipline, start_date, end_date, limit,
-                               only_registered_in_finland)
+        params = _build_horses_params(discipline, start_date, end_date, limit,
+                                        only_registered_in_finland)
         data = fetch_json(self.client, path or self.horses_path, params=params)
         return _normalise_horses(_as_list(data))
 
     # ------------------------------------------------------------------
-    def top_drivers(self, discipline: Discipline = "warmblood",
-                    start_date: Optional[str] = None,
-                    end_date: Optional[str] = None,
-                    limit: int = 50,
-                    only_registered_in_finland: bool = True,
-                    path: Optional[str] = None) -> pd.DataFrame:
-        params = _build_params(discipline, start_date, end_date, limit,
-                               only_registered_in_finland)
-        data = fetch_json(self.client, path or self.drivers_path, params=params)
-        return _normalise_people(_as_list(data), subject="driver")
-
+    # Drivers / trainers (risingshape pattern)
     # ------------------------------------------------------------------
-    def top_trainers(self, discipline: Discipline = "warmblood",
-                     start_date: Optional[str] = None,
-                     end_date: Optional[str] = None,
-                     limit: int = 50,
-                     only_registered_in_finland: bool = True,
+    def top_drivers(self, start_date: str, end_date: str, *,
+                    track: str = "ALL", limit: int = 30,
+                    order: str = "WINS",
+                    horse_starts: bool = True,
+                    pony_starts: bool = False,
+                    path: Optional[str] = None) -> pd.DataFrame:
+        endpoint = path or self.driver_template.format(start=start_date,
+                                                         end=end_date)
+        params = _build_person_params(track, limit, order,
+                                        horse_starts, pony_starts)
+        data = fetch_json(self.client, endpoint, params=params)
+        return _normalise_people_risingshape(_as_list(data), subject="driver")
+
+    def top_trainers(self, start_date: str, end_date: str, *,
+                     track: str = "ALL", limit: int = 30,
+                     order: str = "WINS",
+                     horse_starts: bool = True,
+                     pony_starts: bool = False,
                      path: Optional[str] = None) -> pd.DataFrame:
-        params = _build_params(discipline, start_date, end_date, limit,
-                               only_registered_in_finland)
-        data = fetch_json(self.client, path or self.trainers_path, params=params)
-        return _normalise_people(_as_list(data), subject="trainer")
+        endpoint = path or self.trainer_template.format(start=start_date,
+                                                          end=end_date)
+        params = _build_person_params(track, limit, order,
+                                        horse_starts, pony_starts)
+        data = fetch_json(self.client, endpoint, params=params)
+        return _normalise_people_risingshape(_as_list(data), subject="trainer")
 
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 
-def _build_params(discipline: Discipline,
-                  start_date: Optional[str],
-                  end_date: Optional[str],
-                  limit: int,
-                  only_registered: bool) -> dict[str, str]:
+def _build_horses_params(discipline: Discipline,
+                          start_date: Optional[str],
+                          end_date: Optional[str],
+                          limit: int,
+                          only_registered: bool) -> dict[str, str]:
     p: dict[str, str] = {}
     sp = SPECIES_MAP.get(discipline, discipline)
     if sp:
@@ -130,6 +142,21 @@ def _build_params(discipline: Discipline,
     if only_registered:
         p["onlyRegisteredInFinland"] = "true"
     return p
+
+
+# Backwards-compatible alias (older tests may import it)
+_build_params = _build_horses_params
+
+
+def _build_person_params(track: str, limit: int, order: str,
+                          horse_starts: bool, pony_starts: bool) -> dict[str, str]:
+    return {
+        "track": track,
+        "limit": str(limit),
+        "order": order,
+        "horseStarts": str(bool(horse_starts)).lower(),
+        "ponyStarts": str(bool(pony_starts)).lower(),
+    }
 
 
 def _as_list(data: Any) -> list[dict]:
@@ -177,44 +204,45 @@ def _normalise_horses(rows: list[dict]) -> pd.DataFrame:
     return pd.DataFrame(out)
 
 
-def _normalise_people(rows: list[dict], *, subject: str) -> pd.DataFrame:
-    """Shared normaliser for drivers and trainers.
+def _normalise_people_risingshape(rows: list[dict], *, subject: str) -> pd.DataFrame:
+    """Normalise the ``risingshape/{driver|trainer}`` response.
 
-    Schema assumption (best-guess, based on consistent Hippos API
-    naming): the records look similar to horses but with ``driverId``
-    or ``trainerId`` and without species/gender. We try multiple field
-    names per column so this works even if the shape differs slightly.
-    Unrecognised fields are preserved under their original names so you
-    can see them with ``df.columns``.
+    Each row in the response carries:
+      start, wins, secondPlaces, thirdPlaces, priceMoneys,
+      winPercentage, priceMoneyForStart, winOddsSumForStart,
+      personName, firstName, lastName, personId, photo
     """
-    id_keys = (f"{subject}Id", "id", "personId", "licenseId")
-    name_keys = ("name", f"{subject}Name", "fullName", "displayName")
-    starts_keys = ("starts", "totalStarts", "startsCount", "raceStarts")
-    wins_keys = ("firstPlaces", "wins", "win", "victories")
-    seconds_keys = ("secondPlaces", "seconds", "second")
-    thirds_keys = ("thirdPlaces", "thirds", "third")
-    earnings_keys = ("prizeSum", "earnings", "totalEarnings", "prize",
-                      "totalPrize", "prizeMoney")
     out = []
     for i, r in enumerate(rows, start=1):
-        starts = _safe_int(_first(r, *starts_keys))
-        wins = _safe_int(_first(r, *wins_keys))
-        seconds = _safe_int(_first(r, *seconds_keys))
-        thirds = _safe_int(_first(r, *thirds_keys))
-        earnings = _safe_int(_first(r, *earnings_keys))
+        starts = _safe_int(r.get("start") or r.get("starts"))
+        wins = _safe_int(r.get("wins") or r.get("firstPlaces"))
+        seconds = _safe_int(r.get("secondPlaces"))
+        thirds = _safe_int(r.get("thirdPlaces"))
+        earnings = _safe_int(r.get("priceMoneys") or r.get("prizeSum"))
+        eur_per_start = _safe_float(r.get("priceMoneyForStart"))
+        win_pct = _safe_float(r.get("winPercentage"))
+        win_odds_per_start = _safe_float(r.get("winOddsSumForStart"))
         out.append({
             "rank": i,
-            f"{subject}_id": _first(r, *id_keys),
-            subject: _first(r, *name_keys),
+            f"{subject}_id": r.get("personId") or r.get(f"{subject}Id"),
+            subject: r.get("personName") or r.get("name") or r.get("fullName"),
+            "first_name": r.get("firstName"),
+            "last_name": r.get("lastName"),
             "starts": starts,
             "wins": wins,
             "seconds": seconds,
             "thirds": thirds,
-            "win_pct": _pct(wins, starts),
+            "win_pct": win_pct if win_pct is not None else _pct(wins, starts),
             "place_pct": _pct((wins or 0) + (seconds or 0) + (thirds or 0), starts),
             "earnings_eur": earnings,
+            "earnings_per_start": eur_per_start,
+            "win_odds_per_start": win_odds_per_start,
         })
     return pd.DataFrame(out)
+
+
+# Backwards-compatible alias
+_normalise_people = _normalise_people_risingshape
 
 
 def _first(d: dict, *keys):
@@ -230,6 +258,16 @@ def _safe_int(v) -> Optional[int]:
         return None
     try:
         return int(float(str(v).replace("\u00A0", "").replace(" ", "")))
+    except (TypeError, ValueError):
+        return None
+
+
+def _safe_float(v) -> Optional[float]:
+    if v is None or v == "":
+        return None
+    try:
+        s = str(v).replace("\u00A0", "").replace(" ", "").replace(",", ".")
+        return float(s)
     except (TypeError, ValueError):
         return None
 
