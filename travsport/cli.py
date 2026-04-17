@@ -18,8 +18,15 @@ from .api import RACE_STATS_TEMPLATE, TravsportApi
 from .client import from_env
 
 app = typer.Typer(add_completion=False,
-                   help="Read-only Svensk Travsport JSON adapter.")
+                   help="Read-only Svensk Travsport JSON adapter.",
+                   no_args_is_help=True)
 console = Console()
+
+
+@app.callback()
+def _default():
+    """Group callback - forces Typer into subcommand mode even when
+    there is only one @app.command registered."""
 
 
 @app.command("race-stats")
