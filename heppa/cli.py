@@ -174,11 +174,12 @@ def horse_stats_cmd(horse_id: str = typer.Argument(..., help="Hippos horseId."),
         console.print_json(json.dumps(data, ensure_ascii=False, default=str))
         return
     stats = api.horse_stats(horse_id)
-    # Career total
+    # Career total (columns MUST be added before rows in rich)
     tot = Table(title=f"Horse {horse_id} — career total")
+    tot.add_column("field")
+    tot.add_column("value")
     for k, v in stats.total.items():
         tot.add_row(str(k), "" if v is None else str(v))
-    tot.add_column("field"); tot.add_column("value")
     console.print(tot)
     # Per-year
     if not stats.yearly.empty:
