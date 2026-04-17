@@ -1,0 +1,20 @@
+race_id,race_number,track,distance_m,start_type,race_class,program_number,name,driver,trainer,post_position,speed_rating,class_rating,stamina_rating,gallop_risk,days_since_last_start,equipment_change,shoeing_change,pool_percentage,published_odds,recent_finishes,recent_kilometer_times,recent_earnings
+R1,1,Vermo,2100,volt,koe,1,Askelvakaa,Driver_A,Trainer_X,1,88,85,86,0.02,14,false,false,38.2,,1|2|1|3|2,78.2|77.9|78.1|78.6|78.0,3200|4100|2800|1900|3500
+R1,1,Vermo,2100,volt,koe,2,Ravinropsu,Driver_B,Trainer_Y,2,82,80,81,0.04,20,false,false,15.1,,2|4|3|5|2,79.1|79.4|79.2|79.8|79.0,1800|1200|1500|900|2000
+R1,1,Vermo,2100,volt,koe,3,Tähtihetki,Driver_C,Trainer_Z,3,75,72,74,0.08,34,true,false,9.8,,5|6|7|4|8,80.2|80.4|80.1|80.7|80.3,600|700|500|800|400
+R1,1,Vermo,2100,volt,koe,4,Kultakenkä,Driver_D,Trainer_X,4,78,76,79,0.03,22,false,true,12.4,,3|2|4|2|3,79.4|79.2|79.3|79.1|79.6,1200|1400|1100|1500|1000
+R1,1,Vermo,2100,volt,koe,5,Voiton Tuli,Driver_E,Trainer_Y,5,70,68,71,0.06,45,false,false,6.2,,7|8|6|9|7,81.0|80.8|81.1|81.3|80.9,400|300|450|250|350
+R1,1,Vermo,2100,volt,koe,6,Kuun Kuningas,Driver_F,Trainer_Z,6,72,70,73,0.05,30,true,false,5.1,,6|7|5|8|6,80.6|80.8|80.5|81.0|80.7,500|600|700|400|550
+R1,1,Vermo,2100,volt,koe,7,Salamavalo,Driver_G,Trainer_X,7,68,66,69,0.10,55,false,false,3.8,,8|9|8|7|10,81.5|81.7|81.4|82.0|81.6,200|300|150|250|100
+R1,1,Vermo,2100,volt,koe,8,Pilvenpiirtäjä,Driver_H,Trainer_Y,8,74,72,75,0.04,18,false,true,4.9,,4|5|3|6|4,80.0|80.2|79.8|80.5|80.3,800|700|900|600|850
+R1,1,Vermo,2100,volt,koe,9,Rautalankka,Driver_I,Trainer_Z,9,66,64,67,0.12,60,true,false,2.4,,9|10|11|9|12,82.0|82.3|82.1|82.5|82.4,100|150|80|120|90
+R1,1,Vermo,2100,volt,koe,10,Yöjuna,Driver_J,Trainer_X,10,64,62,65,0.08,40,false,false,2.1,,10|11|9|12|10,82.3|82.6|82.4|82.8|82.5,80|100|60|90|70
+R2,2,Vermo,2100,auto,koe,1,Pohjantähti,Driver_A,Trainer_X,1,85,84,83,0.02,10,false,false,31.5,,1|1|2|1|3,77.8|77.6|78.0|77.5|78.1,4500|5200|3800|4900|3600
+R2,2,Vermo,2100,auto,koe,2,Kilpa-Kiita,Driver_B,Trainer_Y,2,81,79,80,0.03,16,false,false,18.2,,2|3|2|4|2,78.9|79.1|79.0|79.3|78.8,2300|1900|2100|1800|2200
+R2,2,Vermo,2100,auto,koe,3,Loistoluotto,Driver_C,Trainer_Z,3,78,77,78,0.04,22,true,false,11.3,,3|4|3|5|3,79.2|79.4|79.1|79.6|79.3,1500|1200|1400|1100|1300
+R2,2,Vermo,2100,auto,koe,4,Taikatemppu,Driver_D,Trainer_X,4,74,72,73,0.06,28,false,false,9.7,,5|6|4|7|5,80.0|80.2|79.9|80.5|80.1,900|700|1000|600|850
+R2,2,Vermo,2100,auto,koe,5,Myrsky,Driver_E,Trainer_Y,5,70,68,69,0.08,35,false,true,7.8,,6|7|5|8|6,80.6|80.9|80.4|81.1|80.7,500|600|400|550|450
+R2,2,Vermo,2100,auto,koe,6,Rivinrikkoja,Driver_F,Trainer_Z,6,68,66,67,0.10,42,true,false,6.5,,7|8|6|9|7,81.2|81.5|81.0|81.8|81.3,300|400|250|350|200
+R2,2,Vermo,2100,auto,koe,7,Kovakoura,Driver_G,Trainer_X,7,76,75,76,0.03,15,false,false,8.4,,4|3|5|3|4,79.8|79.6|80.0|79.5|79.7,1200|1300|1100|1400|1000
+R2,2,Vermo,2100,auto,koe,8,Unelmatäti,Driver_H,Trainer_Y,8,66,64,65,0.09,48,false,false,3.9,,8|9|7|10|8,81.7|82.0|81.5|82.3|81.8,200|250|180|220|150
+R2,2,Vermo,2100,auto,koe,9,Voittava Veto,Driver_I,Trainer_Z,9,72,70,71,0.05,25,false,true,2.7,,6|5|7|4|6,80.4|80.2|80.6|80.0|80.3,700|800|600|900|650
