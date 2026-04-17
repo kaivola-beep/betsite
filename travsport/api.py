@@ -229,7 +229,7 @@ class RaceStats:
         pp = self.past_performances
         out: list[dict] = []
         ref = (pd.to_datetime(reference_date, utc=True) if reference_date
-               else pd.Timestamp.utcnow().normalize().tz_localize("UTC"))
+               else pd.Timestamp.now(tz="UTC").normalize())
         for pn, group in pp.groupby("program_number"):
             g = group[group["is_competition"]].head(last_n)
             if g.empty:
