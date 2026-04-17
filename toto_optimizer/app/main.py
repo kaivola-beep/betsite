@@ -47,7 +47,9 @@ def _run_pipeline(card: RaceCard, budget: float, strategy: str, seed: int,
     model_probs = pl.predict_probabilities(feats)
     model_probs = ensure_prob_normalised(model_probs)
 
-    market = MarketModel()
+    # Default: no debiasing of pool shares. Use method='power' or 'shin' only
+    # after calibrating with historical data.
+    market = MarketModel(method="none")
     extra = load_pool_shares_from_csv(pool_shares_csv) if pool_shares_csv else None
     market_probs = market.annotate_card(card, extra_shares=extra)
 

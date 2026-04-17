@@ -139,22 +139,40 @@ fair_odds_i = 1 / p_i
 Marginaalikorjattu turvakerroin: `1 / (p_i * (1+m))`, missä `m` on haluttu
 turvamarginaali.
 
-### Poolin implikoima todennäköisyys (Shin 1993)
+### Poolin implikoima todennäköisyys
 
-Havaitut poolin osuudet `q_i` normalisoidaan ja ratkaistaan `z ∈ (0,1)` yhtälöstä
+> **Rehellinen varaus.** Veikkauksen pari-mutuel-pool ei sisällä
+> bookmaker-tyylistä overroundia (osuudet summautuvat jo yhteen). Jos
+> pooliosuuksissa on bias suhteessa totuuteen, se on *käyttäytymisbias*
+> (favourite-longshot-bias, trendirivit, banker-ajattelu) eikä
+> overround-margiini. Tämä moduuli tarjoaa siksi **kolme vaihtoehtoa**,
+> joista oletus on "ei korjausta":
 
-```
-Σ_i (√(z² + 4(1-z) q_i²) - z) / (2(1-z)) = 1
-```
+1. `method="none"` (oletus): `π_i = q_i`. Pelaajapoolin kokemia
+   käyttäytymisbiaseja ei yritetä arvata; malli/markkina-vertailu
+   tapahtuu ensemblessä.
+2. `method="power"`: `π_i ∝ q_i^α / Z`. Yksiparametrinen korjaus, joka
+   pehmentää (α < 1) tai terävöittää (α > 1) jakaumaa. **Kalibroidaan
+   aina** historiadatasta (`MarketModel.calibrate_power_alpha`).
+3. `method="shin"`: Shin (1993) -menetelmä. Lisätty vertailun vuoksi;
+   alun perin tämä on bookmaker-overroundin purkumenetelmä, ei täysin
+   oikea pari-mutueliin. Käyttö vaatii erityisen selkeät perustelut.
 
-Debiasattu implikoitu tn. on
+### Rivisuosio (combination popularity)
 
-```
-π_i = (√(z² + 4(1-z) q_i²) - z) / (2(1-z))
-```
+Rivin suosio on poolipelin vaikein lenkki: hevoskohtaisista osuuksista
+ei saa suoraan tarkkaa rivikohtaista suosiota. `pool/rivisuosio.py`
+tarjoaa kolme eksplisiittistä mallia:
 
-Tämä vetää massaa suosikeilta kohti pitkäveton hevosia ja poistaa
-favourite-longshot-biaksen.
+- **IndependenceModel**: `popularity(c) = Π_k s_k`. Baseline.
+- **ChalkCorrelationModel**: independence × `(1 + α · f_fav(c))` missä
+  `f_fav(c)` on top-M-suosikkiosumien osuus. `α` ja `M` kalibroidaan.
+- **LogLinearModel**: `log r(c) = log Π s_k + Σ_k θ_k · 1[top-M] + const`
+  kalibroituna havainnoista `(combo, observed_share)` pienimmän
+  neliösumman sovituksella. Vaatii useita havaintoja.
+
+Optimoija käyttää `ObjectiveContext.popularity_fn`-hook-mekanismia,
+joten mallin vaihto on yhden rivin muutos.
 
 ### Edge
 
@@ -216,23 +234,49 @@ pytest toto_optimizer/tests -q
   pareto/trifecta-tyyppisten monipaikkaennusteiden alkuperäiseen muotoon.
 - **Ei scrapingia** – Veikkauksen sivuilta ei haeta dataa suoraan.
 
-## Jatkokehitysehdotukset
+## Kehityspolku (V1 / V2)
 
-1. **Oikea datalähde** – toteuta `RaceCardLoader`-protokolla Veikkauksen
-   virallista API:a / tietolähdettä vasten (käyttöehtojen sallimalla tavalla).
-2. **Historiamalli** – kerää muutaman tuhannen lähdön historia ja kalibroi
-   `train_from_history` -pipeline uudelleen säännöllisesti.
-3. **Gradient boosting -ensemble** – lisää LightGBM-pohjainen malli
-   ja yhdistä se LogLinearEnsemble-luokkaan.
-4. **Bayesilainen epävarmuusarvio** – korvaa point-estimaatti MCMC:llä
-   (pymc) tai Laplace-approksimaatiolla ja tulosta luottamusvälit.
-5. **Rivirakenne-optimointi** – korvaa greedy-systeemipakkaus
-   MILP-ratkaisijalla (PuLP/CBC), joka maksimoi portfolio-EV:n yhtenä
-   integer-ongelmana.
-6. **Kalibrointimonitorointi** – online-Brier/ECE-mittarit ja driftin
-   havaitseminen.
-7. **Rivisuosiokorjaus** – kalibroi chalk-korrelaatio aidolla
-   rivisuosiodatalla.
+Projekti on rakennettu priorisoituna: V1 on jo koodissa ja toimii; V2 on
+eriytetty moduuleihin, jotka voi aktivoida tarvittaessa.
+
+**V1 (toimiva tänään):**
+- Demo/CSV-data ja skeemat
+- Feature engineering
+- Plackett-Luce/softmax -baseline + prior
+- Isotonic-kalibrointi + bucketed-diagnostiikka
+- Log-linear ensemble (malli + markkina)
+- Edge-taulu ja fair odds
+- Yksinkertainen rivigenerointi (beam search + greedy-systeemipakkaus)
+  budjettirajoitteella, kolmella strategialla
+- Monte Carlo -simulaatio
+- Streamlit UI + Typer CLI
+
+**V2 (eriytetty, opt-in):**
+1. **Boosted ranking** (`models/boosted.py`) – LightGBM/XGBoost-LambdaRank
+   baseline-ensembleen. Opt-in: importataan laiskasti.
+2. **Kalibroitu power-α** pool debiasille (`MarketModel.calibrate_power_alpha`).
+3. **Rivisuosio-mallit** (`pool/rivisuosio.py`): IndependenceModel,
+   ChalkCorrelationModel, LogLinearModel - kytkettävissä
+   `ObjectiveContext.popularity_fn`-hook:iin.
+4. **Bucketed-kalibrointi** (`calibration_report_by_bucket`) – metriikat
+   lähtökoon, todennäköisyysbuketin ja ajan mukaan. Käytännössä
+   välttämätön driftin havaitsemiseen.
+5. **MILP-portfolio-optimointi** (PuLP/CBC) – korvaa greedy-pakkauksen
+   kun rivien määrä nousee.
+6. **Bayesilainen PL** – Laplace-approksimaatio tai MCMC tuomaan
+   luottamusvälit per hevonen.
+7. **Bankroll-/riskimallit** – fractional-Kelly -laajennus pari-mutueliin
+   (`risk_adjusted_utility` on pohja).
+8. **Oikea Veikkaus-datalähde** – toteuta `RaceCardLoader`-protokolla
+   Veikkauksen virallista rajapintaa vasten (käyttöehtojen sallimalla
+   tavalla). Älä scrape:aa.
+
+## Vastuullisuus
+
+Toto-pelaaminen on tilastollisesti negatiivisumma-peliä takeoutin takia.
+Pitkällä aikavälillä kotona pelaavan plus-EV on poikkeus, ei sääntö.
+Tämä paketti auttaa paremmin kalibroimaan odotuksia, ei takaa voittoja.
+Pelaa vastuullisesti - apua osoitteesta peluuri.fi.
 
 ## Lisenssi
 

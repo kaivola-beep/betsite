@@ -22,13 +22,19 @@ jackpot is large.
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass
-from typing import Sequence
+from dataclasses import dataclass, field
+from typing import Callable, Optional, Sequence
 
 
 @dataclass
 class ObjectiveContext:
-    """Everything an objective needs to score a combination."""
+    """Everything an objective needs to score a combination.
+
+    ``popularity_fn`` lets the caller plug in any rivisuosio model from
+    :mod:`pool.rivisuosio` (independence, chalk, log-linear, ...). If
+    ``None``, the legacy chalk-correlation heuristic is used with
+    ``chalk_correlation`` as its alpha.
+    """
 
     # p_leg[k][program_number] -> probability
     p_leg: list[dict[int, float]]
@@ -40,6 +46,7 @@ class ObjectiveContext:
     n_other_tickets: float
     stake_unit: float = 0.10
     chalk_correlation: float = 0.0
+    popularity_fn: Optional[Callable[[Sequence[int], "ObjectiveContext"], float]] = None
 
     def leg_count(self) -> int:
         return len(self.p_leg)
@@ -53,7 +60,15 @@ def hit_probability(combo: Sequence[int], ctx: ObjectiveContext) -> float:
 
 
 def combo_popularity(combo: Sequence[int], ctx: ObjectiveContext) -> float:
-    """Product of per-leg pool shares, with optional chalk-correlation lift."""
+    """Estimated fraction of opponent tickets that match ``combo``.
+
+    If ``ctx.popularity_fn`` is provided it is used directly (typically
+    one of the models in :mod:`pool.rivisuosio`). Otherwise we fall back
+    to the legacy chalk-correlation heuristic.
+    """
+    if ctx.popularity_fn is not None:
+        return max(float(ctx.popularity_fn(combo, ctx)), 1e-18)
+
     pop = 1.0
     fav_hits = 0.0
     for k, n in enumerate(combo):

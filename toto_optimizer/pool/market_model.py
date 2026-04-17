@@ -1,37 +1,34 @@
 """Pool / market model.
 
-Two problems:
+Important note on framing
+-------------------------
+This module estimates the *subjective* winning probability that the
+Veikkaus betting pool assigns to each horse, from the observed pool
+shares ``q_i``. Unlike a bookmaker market there is **no overround** to
+remove: pari-mutuel shares already sum to 1. What may remain is
+behavioural favourite-longshot bias (FLB): bettors tend to over-bet
+longshots and, depending on market, slightly under-bet heavy favourites.
 
-1. *Pool-implied probability.* Given Veikkaus Voittaja pool percentages
-   (single-race win pool), estimate the subjective winning probability the
-   market assigns to each horse. We use the Shin (1993) method, which
-   corrects for the favourite-longshot bias by modelling an insider share
-   ``z``. For observed pool shares q_i we solve
+We therefore offer three *honest* options for debiasing shares into a
+probability estimate. None of them is a ground truth; pick the one that
+best matches your historical data and keep track of which you used.
 
-       sum_i ( sqrt(z^2 + 4 (1 - z) q_i^2) - z ) / (2 (1 - z)) = 1
+* ``"none"``  – identity. ``pi_i = q_i``. The safe default when in doubt.
+* ``"power"`` – ``pi_i propto q_i^alpha / Z``. ``alpha < 1`` pulls mass
+  toward longshots, ``alpha > 1`` toward favourites. This is a single
+  scalar that is easy to calibrate from historical data.
+* ``"shin"``  – Shin (1993) insider-trading model. Strictly speaking it
+  was formulated for bookmaker markets with an overround; we include it
+  only because in practice it produces similar qualitative effects on
+  share vectors, but the user should not treat it as "the correct" choice
+  for pari-mutuel data.
 
-   for z in (0, 1) and then define
-
-       pi_i = ( sqrt(z^2 + 4 (1 - z) q_i^2) - z ) / (2 (1 - z))
-
-   The pi_i are the Shin-implied probabilities; they sum to 1 by design.
-   Compared to plain normalisation (pi_i = q_i / sum q_j) the Shin method
-   systematically pulls mass away from extreme favourites and toward
-   longshots, matching what we see in real pari-mutuel markets.
-
-2. *Combination popularity.* For a Toto product that requires picking the
-   winner in K legs, we estimate the bettor popularity of a specific row as
-
-       popularity(row) = prod_k pool_share_k(row_k) * C
-
-   where ``C`` is a correlation adjustment that can model chalk-stacking
-   (favourites often co-occur on tickets). The default is C=1 and can be
-   calibrated from observed rivisuosio if rivisuosio data is available.
+For combination popularity (rivisuosio) see :mod:`pool.rivisuosio`.
 """
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Iterable
+from typing import Iterable, Literal
 
 import numpy as np
 import pandas as pd
@@ -41,31 +38,51 @@ from ..app.config import SETTINGS
 from ..data.schemas import PoolShare, RaceCard
 
 
+DebiasMethod = Literal["none", "power", "shin"]
+
+
 @dataclass
 class MarketModel:
-    shin: bool = True
-    chalk_correlation: float = 0.0
-    """Correlation coefficient used when estimating combination popularity.
-    >0 models chalk-stacking (people bet favourites together more often
-    than independence would imply)."""
+    """Debiases raw pool shares into subjective market probabilities.
+
+    Parameters
+    ----------
+    method
+        Debiasing method: ``'none'`` (identity, default), ``'power'`` (FLB
+        power correction) or ``'shin'`` (insider-share model, not a
+        perfect fit for pari-mutuel but available as a comparison).
+    power_alpha
+        Exponent used when ``method='power'``. ``alpha=1`` is a no-op.
+        Values in roughly ``[0.85, 0.95]`` are typical for racing
+        markets; callers are expected to calibrate this from observed
+        data via :meth:`calibrate_power_alpha`.
+    """
+
+    method: DebiasMethod = "none"
+    power_alpha: float = 0.9
 
     # ------------------------------------------------------------------
     # Single-race implied probabilities
     # ------------------------------------------------------------------
     def implied_probabilities(self, shares: np.ndarray) -> np.ndarray:
-        """Return Shin-implied (or normalised) probabilities."""
         q = np.asarray(shares, dtype=float)
         q = np.clip(q, 1e-9, 1.0)
         q = q / q.sum()
-        if not self.shin or len(q) <= 1:
+        if len(q) <= 1:
             return q
-        try:
-            z = _solve_shin_z(q)
-        except ValueError:
+        if self.method == "none":
             return q
-        pi = (np.sqrt(z * z + 4 * (1 - z) * q * q) - z) / (2 * (1 - z))
-        pi = pi / pi.sum()
-        return pi
+        if self.method == "power":
+            pi = q ** self.power_alpha
+            return pi / pi.sum()
+        if self.method == "shin":
+            try:
+                z = _solve_shin_z(q)
+            except ValueError:
+                return q
+            pi = (np.sqrt(z * z + 4 * (1 - z) * q * q) - z) / (2 * (1 - z))
+            return pi / pi.sum()
+        return q
 
     # ------------------------------------------------------------------
     # From a race card
@@ -79,7 +96,6 @@ class MarketModel:
 
         rows: list[dict] = []
         for race in card.races:
-            # Prefer explicit pool share overrides, else horse.pool_percentage
             shares = []
             for h in race.horses:
                 key = (race.race_id, h.program_number)
@@ -95,11 +111,9 @@ class MarketModel:
 
             shares = np.asarray(shares, dtype=float)
             if np.all(np.isnan(shares)):
-                # No market info for this race -> flat prior
                 shares = np.full(len(race.horses), 1.0 / len(race.horses))
                 p_impl = shares.copy()
             else:
-                # Replace NaN with minimum positive value in the race
                 nan_mask = np.isnan(shares)
                 if nan_mask.any():
                     shares[nan_mask] = np.nanmin(shares[~nan_mask]) * 0.5
@@ -116,30 +130,37 @@ class MarketModel:
         return pd.DataFrame(rows)
 
     # ------------------------------------------------------------------
-    # Combination popularity (for Toto-4/5/75/76)
+    # Power-alpha calibration
     # ------------------------------------------------------------------
-    def combo_popularity(self, shares_per_leg: list[dict[int, float]],
-                         combo: tuple[int, ...]) -> float:
-        """Estimate the fraction of tickets that match ``combo``.
+    @staticmethod
+    def calibrate_power_alpha(shares_per_race: list[np.ndarray],
+                               winners_per_race: list[int],
+                               alpha_grid: np.ndarray | None = None) -> float:
+        """Grid-search the alpha that minimises log-loss on historical races.
 
-        ``shares_per_leg[k][n]`` is the pool share for program number ``n``
-        in leg ``k``. The combination popularity is the product of shares
-        with an optional chalk-correlation inflation when the combo is
-        consistently on the favourite side.
+        ``winners_per_race[r]`` is the index (within race r) of the winning
+        horse. ``shares_per_race[r]`` are the raw pool shares for race r.
         """
-        base = 1.0
-        fav_indicator = 0.0
-        for k, n in enumerate(combo):
-            s = shares_per_leg[k].get(n, 0.0)
-            base *= max(s, 1e-12)
-            # favourite indicator: 1 if this horse is in the top-3 shares
-            top = sorted(shares_per_leg[k].values(), reverse=True)[:3]
-            if s in top:
-                fav_indicator += 1.0
-        if self.chalk_correlation <= 0:
-            return base
-        lift = 1.0 + self.chalk_correlation * fav_indicator / max(1, len(combo))
-        return base * lift
+        if alpha_grid is None:
+            alpha_grid = np.linspace(0.70, 1.20, 51)
+        best_alpha = 1.0
+        best_ll = float("inf")
+        for alpha in alpha_grid:
+            ll = 0.0
+            n = 0
+            for q, w in zip(shares_per_race, winners_per_race):
+                q = np.clip(q / q.sum(), 1e-9, 1.0)
+                pi = q ** alpha
+                pi = pi / pi.sum()
+                ll -= np.log(pi[w])
+                n += 1
+            if n == 0:
+                continue
+            ll /= n
+            if ll < best_ll:
+                best_ll = ll
+                best_alpha = float(alpha)
+        return best_alpha
 
     # ------------------------------------------------------------------
     # Edge metrics
@@ -159,7 +180,7 @@ class MarketModel:
 
 
 # ---------------------------------------------------------------------------
-# Shin z solver
+# Shin z solver (kept for comparison, not the default)
 # ---------------------------------------------------------------------------
 
 def _shin_sum(z: float, q: np.ndarray) -> float:
@@ -167,16 +188,14 @@ def _shin_sum(z: float, q: np.ndarray) -> float:
 
 
 def _solve_shin_z(q: np.ndarray) -> float:
-    """Solve sum_i Shin(q_i; z) = 1 for z in (0, 1)."""
-    # The function is monotone in z on (0, 1). At z=0 the expression reduces
-    # to q_i^2 / sum q_j which sums to <= 1. We want a z such that the
-    # insider share perfectly accounts for the overround; since shares are
-    # already normalised to sum to 1, z=0 is a trivial solution. For the
-    # Shin method to be meaningful we must start from *raw* shares whose sum
-    # is > 1 (i.e., the overround). We emulate this by inflating q by a
-    # small favourite-longshot bias factor.
+    """Solve sum_i Shin(q_i; z) = 1 for z in (0, 1).
+
+    Because pari-mutuel shares already sum to 1 we synthesise a small
+    pseudo-overround from the share dispersion so that the solver has a
+    non-trivial root. This is heuristic; use ``method='power'`` when
+    calibrated historical data is available.
+    """
     q = q / q.sum()
-    # Create a pseudo overround from variance of q (more spread = more bias)
     overround = 1.0 + 0.05 * (np.max(q) - np.min(q))
     qr = q * overround
     if _shin_sum(SETTINGS.shin_tol, qr) >= 1.0:

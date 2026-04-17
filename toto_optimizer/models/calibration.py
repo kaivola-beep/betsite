@@ -113,3 +113,40 @@ def calibration_report(p: np.ndarray, y: np.ndarray, n_bins: int = 10) -> dict:
         "ece": expected_calibration_error(p, y, n_bins),
         "n": int(len(p)),
     }
+
+
+def calibration_report_by_bucket(p: np.ndarray, y: np.ndarray,
+                                  bucket: np.ndarray,
+                                  n_bins: int = 10) -> dict[str, dict]:
+    """Slice calibration metrics by an external bucket label.
+
+    Use this to surface *where* a model is miscalibrated. Typical choices
+    for ``bucket`` are:
+
+    * race size (# runners)
+    * probability bucket (e.g. 0-5%, 5-20%, 20-50%, >50%)
+    * time bucket (month / season) to detect drift
+    """
+    p = np.asarray(p, dtype=float)
+    y = np.asarray(y, dtype=int)
+    bucket = np.asarray(bucket)
+    out: dict[str, dict] = {}
+    for b in np.unique(bucket):
+        mask = bucket == b
+        if mask.sum() < 5:
+            # Too few samples; report as NaN to be honest
+            out[str(b)] = {"n": int(mask.sum()), "brier": float("nan"),
+                           "log_loss": float("nan"), "ece": float("nan")}
+            continue
+        out[str(b)] = calibration_report(p[mask], y[mask], n_bins=n_bins)
+    return out
+
+
+def probability_buckets(p: np.ndarray,
+                        edges: np.ndarray | None = None) -> np.ndarray:
+    """Assign each ``p_i`` to a probability-bucket label (string)."""
+    if edges is None:
+        edges = np.array([0.0, 0.02, 0.05, 0.10, 0.20, 0.35, 0.55, 1.01])
+    idx = np.digitize(p, edges) - 1
+    labels = [f"[{edges[i]:.2f},{edges[i + 1]:.2f})" for i in range(len(edges) - 1)]
+    return np.array([labels[min(max(i, 0), len(labels) - 1)] for i in idx])

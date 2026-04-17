@@ -107,7 +107,19 @@ pl = PlackettLuceModel()
 model_probs = pl.predict_probabilities(feats)
 model_probs = ensure_prob_normalised(model_probs)
 
-market = MarketModel()
+debias = st.sidebar.selectbox(
+    "Pool-shares -> probability debias",
+    ["none", "power", "shin"],
+    index=0,
+    help=(
+        "Raakaosuudet (none) on turvallinen oletus. 'power' (alpha<1) pehmentää "
+        "suosikkeja; kalibroi aina dataan. 'shin' on kiinteiden kertoimien "
+        "menetelma, ei täysin oikea pari-mutueliin - mukana vertailun vuoksi."
+    ),
+)
+power_alpha = st.sidebar.slider("power alpha", 0.70, 1.20, 0.90, 0.01,
+                                 disabled=(debias != "power"))
+market = MarketModel(method=debias, power_alpha=float(power_alpha))
 market_probs = market.annotate_card(card, extra_shares=extra_shares)
 
 ensemble = LogLinearEnsemble(w_model=w_model, w_market=1 - w_model)

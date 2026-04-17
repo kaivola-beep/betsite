@@ -7,42 +7,60 @@ import pytest
 from toto_optimizer.pool.market_model import MarketModel
 
 
-def test_implied_probabilities_sum_to_one():
-    mm = MarketModel()
-    pi = mm.implied_probabilities(np.array([0.50, 0.20, 0.15, 0.10, 0.05]))
+def test_none_method_is_identity():
+    mm = MarketModel(method="none")
+    raw = np.array([0.50, 0.20, 0.15, 0.10, 0.05])
+    pi = mm.implied_probabilities(raw)
     assert pi.sum() == pytest.approx(1.0, abs=1e-9)
-    assert np.all(pi > 0)
+    assert np.allclose(pi, raw / raw.sum(), atol=1e-9)
 
 
-def test_shin_moves_mass_away_from_favourite():
-    """Shin debiasing should reduce the favourite's implied probability
-    relative to the raw pool share (favourite-longshot bias correction)."""
+def test_power_alpha_below_one_pulls_mass_from_favourite():
     raw = np.array([0.60, 0.20, 0.10, 0.06, 0.04])
-    mm_shin = MarketModel(shin=True)
-    mm_flat = MarketModel(shin=False)
-    pi_shin = mm_shin.implied_probabilities(raw)
-    pi_flat = mm_flat.implied_probabilities(raw)
-    assert pi_shin[0] <= pi_flat[0] + 1e-9
-    # longshot's implied probability should be at least as high
-    assert pi_shin[-1] >= pi_flat[-1] - 1e-9
+    mm = MarketModel(method="power", power_alpha=0.85)
+    pi = mm.implied_probabilities(raw)
+    assert pi.sum() == pytest.approx(1.0, abs=1e-9)
+    assert pi[0] < raw[0]
+    assert pi[-1] > raw[-1]
 
 
-def test_combo_popularity_multiplies_shares():
-    mm = MarketModel(chalk_correlation=0.0)
-    shares_per_leg = [
-        {1: 0.3, 2: 0.2, 3: 0.5},
-        {1: 0.4, 2: 0.6},
-    ]
-    assert mm.combo_popularity(shares_per_leg, (1, 1)) == pytest.approx(0.3 * 0.4)
-    assert mm.combo_popularity(shares_per_leg, (3, 2)) == pytest.approx(0.5 * 0.6)
+def test_power_alpha_one_is_identity():
+    mm = MarketModel(method="power", power_alpha=1.0)
+    raw = np.array([0.4, 0.3, 0.2, 0.1])
+    pi = mm.implied_probabilities(raw)
+    assert np.allclose(pi, raw, atol=1e-9)
 
 
-def test_chalk_correlation_lifts_favourites():
-    mm = MarketModel(chalk_correlation=0.5)
-    shares_per_leg = [
-        {1: 0.5, 2: 0.1, 3: 0.4},     # 1 and 3 are top-3
-        {1: 0.5, 2: 0.3, 3: 0.2},
-    ]
-    base = 0.5 * 0.5
-    lifted = mm.combo_popularity(shares_per_leg, (1, 1))
-    assert lifted > base
+def test_shin_option_available_and_sums_to_one():
+    mm = MarketModel(method="shin")
+    pi = mm.implied_probabilities(np.array([0.60, 0.20, 0.10, 0.06, 0.04]))
+    assert pi.sum() == pytest.approx(1.0, abs=1e-9)
+
+
+def test_calibrate_power_alpha_prefers_smaller_than_one_when_longshots_win_often():
+    rng = np.random.default_rng(0)
+    # Simulate a world where true probability is a power of the share (alpha=0.8)
+    shares_list, winners = [], []
+    for _ in range(400):
+        k = rng.integers(6, 12)
+        q = rng.dirichlet(np.ones(k) * 1.2)
+        true = q ** 0.8
+        true = true / true.sum()
+        w = int(rng.choice(k, p=true))
+        shares_list.append(q)
+        winners.append(w)
+    alpha_hat = MarketModel.calibrate_power_alpha(shares_list, winners)
+    assert 0.70 <= alpha_hat <= 0.95
+
+
+def test_edge_table_has_expected_columns():
+    import pandas as pd
+    model_probs = pd.DataFrame({"race_id": ["R1", "R1"],
+                                 "program_number": [1, 2],
+                                 "prob": [0.6, 0.4]})
+    market_probs = pd.DataFrame({"race_id": ["R1", "R1"],
+                                  "program_number": [1, 2],
+                                  "p_market": [0.5, 0.5]})
+    t = MarketModel.edge_table(model_probs, market_probs)
+    for col in ("edge", "log_edge", "fair_odds", "market_odds"):
+        assert col in t.columns
