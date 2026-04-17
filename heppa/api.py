@@ -184,16 +184,24 @@ def _normalise_people(rows: list[dict], *, subject: str) -> pd.DataFrame:
     naming): the records look similar to horses but with ``driverId``
     or ``trainerId`` and without species/gender. We try multiple field
     names per column so this works even if the shape differs slightly.
+    Unrecognised fields are preserved under their original names so you
+    can see them with ``df.columns``.
     """
-    id_keys = (f"{subject}Id", "id", "personId")
-    name_keys = ("name", f"{subject}Name", "fullName")
+    id_keys = (f"{subject}Id", "id", "personId", "licenseId")
+    name_keys = ("name", f"{subject}Name", "fullName", "displayName")
+    starts_keys = ("starts", "totalStarts", "startsCount", "raceStarts")
+    wins_keys = ("firstPlaces", "wins", "win", "victories")
+    seconds_keys = ("secondPlaces", "seconds", "second")
+    thirds_keys = ("thirdPlaces", "thirds", "third")
+    earnings_keys = ("prizeSum", "earnings", "totalEarnings", "prize",
+                      "totalPrize", "prizeMoney")
     out = []
     for i, r in enumerate(rows, start=1):
-        starts = _safe_int(r.get("starts"))
-        wins = _safe_int(r.get("firstPlaces"))
-        seconds = _safe_int(r.get("secondPlaces"))
-        thirds = _safe_int(r.get("thirdPlaces"))
-        earnings = _safe_int(r.get("prizeSum"))
+        starts = _safe_int(_first(r, *starts_keys))
+        wins = _safe_int(_first(r, *wins_keys))
+        seconds = _safe_int(_first(r, *seconds_keys))
+        thirds = _safe_int(_first(r, *thirds_keys))
+        earnings = _safe_int(_first(r, *earnings_keys))
         out.append({
             "rank": i,
             f"{subject}_id": _first(r, *id_keys),
