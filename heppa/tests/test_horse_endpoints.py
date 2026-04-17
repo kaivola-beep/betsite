@@ -10,6 +10,7 @@ import pytest
 
 from heppa.api import (
     HippoApi,
+    HorseProfile,
     HorseStats,
     _normalise_horse_starts,
     parse_km_time,
@@ -21,10 +22,53 @@ from heppa.client import HeppaClient
 
 FIX_STATS = Path(__file__).parent.parent / "fixtures" / "horse_stats_sample.json"
 FIX_STARTS = Path(__file__).parent.parent / "fixtures" / "horse_starts_sample.json"
+FIX_PROFILE = Path(__file__).parent.parent / "fixtures" / "horse_profile_sample.json"
 
 
 def _load(path):
     return json.loads(path.read_text(encoding="utf-8"))
+
+
+# ---------------------------------------------------------------------------
+# horse_profile
+# ---------------------------------------------------------------------------
+
+def test_horse_profile_parses_identity_and_blup():
+    prof = HorseProfile.from_json(_load(FIX_PROFILE))
+    assert prof.horse_id == "4497501728848759385"
+    assert prof.name == "Hide And Seek"
+    assert prof.birth_year == 2005
+    assert prof.birth_country == "FI"
+    assert prof.species == "L"
+    assert prof.gender == "R"
+    assert prof.dead is True
+    assert prof.date_of_death == "2015-06-01"
+    assert prof.sire_name == "Express It*"
+    assert prof.dam_name == "Smashy Speed"
+    assert prof.blup == 121.0
+    assert prof.blup_certainty == pytest.approx(0.79)
+    assert prof.best_record_s == pytest.approx(73.0)
+
+
+def test_horse_profile_to_feature_dict_shape():
+    prof = HorseProfile.from_json(_load(FIX_PROFILE))
+    feats = prof.to_feature_dict()
+    for k in ("blup", "blup_certainty", "birth_year", "age", "gender"):
+        assert k in feats
+
+
+def test_api_horse_profile_calls_correct_endpoint():
+    client_dummy = type("X", (), {"base_url": "http://x", "timeout_s": 10,
+                                    "_session": None, "_throttle": lambda s: None,
+                                    "_sleep_backoff": lambda s, a: None,
+                                    "cache_dir": None,
+                                    "min_request_interval_s": 0})()
+    api = HippoApi(client=client_dummy)
+    with patch("heppa.api.fetch_json",
+                return_value=_load(FIX_PROFILE)) as mock_fetch:
+        prof = api.horse_profile("4497501728848759385")
+    assert mock_fetch.call_args[0][1] == "/heppa2_backend/horse/4497501728848759385"
+    assert prof.name == "Hide And Seek"
 
 
 # ---------------------------------------------------------------------------

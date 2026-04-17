@@ -52,6 +52,7 @@ TRAINER_PATH_TEMPLATE = "/heppa2_backend/statistics/risingshape/trainer/{start}/
 # Per-horse endpoints (confirmed via DevTools).
 HORSE_STATS_TEMPLATE = "/heppa2_backend/horse/{horse_id}/stats"
 HORSE_STARTS_TEMPLATE = "/heppa2_backend/horse/{horse_id}/starts"
+HORSE_PROFILE_TEMPLATE = "/heppa2_backend/horse/{horse_id}"
 
 SPECIES_MAP = {
     "warmblood": "L",
@@ -130,6 +131,13 @@ class HippoApi:
         endpoint = HORSE_STATS_TEMPLATE.format(horse_id=horse_id)
         data = fetch_json(self.client, endpoint)
         return HorseStats.from_json(data)
+
+    def horse_profile(self, horse_id: str | int) -> "HorseProfile":
+        """Return a single horse's profile: identity, breed, sire/dam,
+        BLUP (breeding value), chip / UELN numbers, record."""
+        endpoint = HORSE_PROFILE_TEMPLATE.format(horse_id=horse_id)
+        data = fetch_json(self.client, endpoint)
+        return HorseProfile.from_json(data)
 
     def horse_starts(self, horse_id: str | int, *,
                       page: int = 1, page_size: int = 20,
@@ -281,26 +289,34 @@ _normalise_people = _normalise_people_risingshape
 def parse_km_time(s: str | None) -> Optional[float]:
     """Parse a kilometer time into seconds.
 
-    Accepts both the short form ``"14,9"`` (1:14.9 per km, a.k.a.
-    shortKilometerTime) and the long form ``"1.14.9"`` (minute.second.tenth).
-    Returns seconds per kilometre, e.g. 74.9.
+    Accepts the short form ``"14,9"`` (1:14.9 per km), the long form
+    ``"1.14.9"`` (minute.second.tenth), and the record form
+    ``"13,0aly"`` / ``"m13,1ake"`` where a trailing suffix encodes the
+    start / distance type. Suffixes are stripped before parsing.
     """
     if s is None or s == "" or s == "-":
         return None
     s = str(s).strip()
-    # Long form: "1.14.9" -> 1 * 60 + 14.9
+    # Strip optional "m" prefix (monté) and alpha suffix ("aly"/"ake"/...)
+    if s.startswith("m"):
+        s = s[1:]
+    # Take characters up to the last digit
+    import re
+    m = re.match(r"^[0-9.,]+", s)
+    if m:
+        s = m.group(0)
+    # Long form: "1.14.9"
     if s.count(".") == 2:
         try:
-            m, sec, tenth = s.split(".")
-            return float(m) * 60 + float(sec) + float(tenth) / 10.0
+            mins, sec, tenth = s.split(".")
+            return float(mins) * 60 + float(sec) + float(tenth) / 10.0
         except ValueError:
             return None
-    # Short form: "14,9" or "08,3" -> 60 + 14.9
+    # Short form: "14,9" or "08,3"
     s = s.replace(",", ".")
     try:
         v = float(s)
-        # Records < 60s are implicitly "below one minute per km": add 60s
-        if v < 60:
+        if v < 60:      # below 60s means "less than 1 min/km" -> add 60s
             v += 60
         return v
     except ValueError:
@@ -353,6 +369,95 @@ class HorseStats:
         if self.yearly.empty:
             return self.yearly
         return self.yearly.sort_values("year", ascending=False).head(n).reset_index(drop=True)
+
+
+# ---------------------------------------------------------------------------
+# Horse profile (identity + BLUP + sire/dam)
+# ---------------------------------------------------------------------------
+
+@dataclass
+class HorseProfile:
+    horse_id: str
+    name: Optional[str]
+    birth_year: Optional[int]
+    birth_date: Optional[str]
+    birth_country: Optional[str]
+    registration_country: Optional[str]
+    register_no: Optional[str]
+    ueln: Optional[str]
+    chip_no: Optional[str]
+    species: Optional[str]
+    breed_code: Optional[str]
+    breed_name: Optional[str]
+    gender: Optional[str]
+    color: Optional[str]
+    dead: bool
+    date_of_death: Optional[str]
+    sire_id: Optional[str]
+    sire_name: Optional[str]
+    dam_id: Optional[str]
+    dam_name: Optional[str]
+    # BLUP (Best Linear Unbiased Prediction) breeding value — valuable!
+    blup: Optional[float]
+    blup_certainty: Optional[float]
+    blup_year: Optional[str]
+    best_record_s: Optional[float]
+    age: Optional[int]
+    raw: dict
+
+    @classmethod
+    def from_json(cls, data: dict) -> "HorseProfile":
+        sire = data.get("sire") or {}
+        dam = data.get("dam") or {}
+        blup = data.get("blup") or {}
+        birth_date = data.get("birthDate") or data.get("birthDateStr")
+        birth_year = None
+        if birth_date:
+            try:
+                birth_year = int(str(birth_date)[:4])
+            except ValueError:
+                pass
+        return cls(
+            horse_id=str(data.get("id", "")),
+            name=data.get("name"),
+            birth_year=birth_year,
+            birth_date=birth_date,
+            birth_country=data.get("birthCountry"),
+            registration_country=data.get("registrationCountry"),
+            register_no=data.get("registerNo"),
+            ueln=data.get("ueln") if data.get("ueln") not in (None, "", "-") else None,
+            chip_no=data.get("chipNo") if data.get("chipNo") not in (None, "", "-") else None,
+            species=data.get("species"),
+            breed_code=data.get("breedCode"),
+            breed_name=data.get("breedFinName"),
+            gender=data.get("gender"),
+            color=data.get("color"),
+            dead=bool(data.get("dead", False)),
+            date_of_death=data.get("dateOfDeath"),
+            sire_id=str(sire.get("id")) if sire.get("id") else None,
+            sire_name=sire.get("name"),
+            dam_id=str(dam.get("id")) if dam.get("id") else None,
+            dam_name=dam.get("name"),
+            blup=_safe_float(blup.get("blup")),
+            blup_certainty=_safe_float(blup.get("estimateCertainty")),
+            blup_year=blup.get("year"),
+            best_record_s=parse_km_time(data.get("bestRecord")),
+            age=_safe_int(data.get("age")),
+            raw=data,
+        )
+
+    def to_feature_dict(self) -> dict:
+        """Return a tidy dict of the useful numeric features for modelling."""
+        return {
+            "blup": self.blup,
+            "blup_certainty": self.blup_certainty,
+            "birth_year": self.birth_year,
+            "age": self.age,
+            "best_record_s": self.best_record_s,
+            "gender": self.gender,
+            "breed_code": self.breed_code,
+            "is_dead": self.dead,
+        }
 
 
 def _normalise_stats_row(row: dict) -> dict:

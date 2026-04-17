@@ -161,6 +161,32 @@ def trainers(start_date: str = typer.Option(..., "--start"),
                  out=out, raw=raw, path=path)
 
 
+@app.command("horse-profile")
+def horse_profile_cmd(horse_id: str = typer.Argument(..., help="Hippos horseId."),
+                       raw: bool = typer.Option(False, "--raw")):
+    """Identity + BLUP + sire/dam for a single horse."""
+    import json
+    api = HippoApi(client=from_env())
+    if raw:
+        from .discover import fetch_json
+        from .api import HORSE_PROFILE_TEMPLATE
+        data = fetch_json(api.client, HORSE_PROFILE_TEMPLATE.format(horse_id=horse_id))
+        console.print_json(json.dumps(data, ensure_ascii=False, default=str))
+        return
+    prof = api.horse_profile(horse_id)
+    t = Table(title=f"Horse {horse_id} profile")
+    t.add_column("field")
+    t.add_column("value")
+    for k in ("name", "birth_year", "birth_country", "registration_country",
+               "register_no", "ueln", "species", "breed_code", "breed_name",
+               "gender", "color", "dead", "date_of_death",
+               "sire_name", "dam_name", "blup", "blup_certainty", "blup_year",
+               "best_record_s", "age"):
+        v = getattr(prof, k)
+        t.add_row(k, "" if v is None else str(v))
+    console.print(t)
+
+
 @app.command("horse-stats")
 def horse_stats_cmd(horse_id: str = typer.Argument(..., help="Hippos horseId."),
                      raw: bool = typer.Option(False, "--raw")):
